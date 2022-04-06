@@ -340,6 +340,7 @@ cap_ng="auto"
 attr="auto"
 xfs="$default_feature"
 tcg="enabled"
+sio=""
 membarrier="$default_feature"
 vhost_net="$default_feature"
 vhost_crypto="$default_feature"
@@ -1284,6 +1285,10 @@ for opt do
   ;;
   --enable-xfsctl) xfs="yes"
   ;;
+  --disable-sio) sio="no"
+  ;;
+  --enable-sio) sio="yes"
+  ;;
   --disable-smartcard) smartcard="no"
   ;;
   --enable-smartcard) smartcard="yes"
@@ -1897,6 +1902,7 @@ disabled with --disable-FEATURE, default is enabled if available
   opengl          opengl support
   virglrenderer   virgl rendering support
   xfsctl          xfsctl support
+  sio             ScaleIO support
   qom-cast-debug  cast debugging support
   tools           build qemu-io, qemu-nbd and qemu-img tools
   bochs           bochs image format support
@@ -5573,6 +5579,9 @@ echo "CONFIG_BDRV_RW_WHITELIST=$block_drv_rw_whitelist" >> $config_host_mak
 echo "CONFIG_BDRV_RO_WHITELIST=$block_drv_ro_whitelist" >> $config_host_mak
 if test "$xfs" = "yes" ; then
   echo "CONFIG_XFS=y" >> $config_host_mak
+fi
+if test "$sio" = "yes" ; then
+  echo "CONFIG_SIO=y" >> $config_host_mak
 fi
 qemu_version=$(head $source_path/VERSION)
 echo "PKGVERSION=$pkgversion" >>$config_host_mak
