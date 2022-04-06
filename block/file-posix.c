@@ -1193,15 +1193,49 @@ static int hdev_get_max_hw_transfer(int fd, struct stat *st)
 #endif
 }
 
+static int64_t get_sysfs_long(char *path)
+{
+    char buf[32];
+    const char *end;
+    int ret;
+    int sysfd = -1;
+    long value;
+
+    sysfd = open(path, O_RDONLY);
+    if (sysfd == -1) {
+        ret = -errno;
+        goto out;
+    }
+
+    do {
+        ret = read(sysfd, buf, sizeof(buf) - 1);
+    } while (ret == -1 && errno == EINTR);
+
+    if (ret < 0) {
+        ret = -errno;
+        goto out;
+    } else if (ret == 0) {
+        ret = -EIO;
+        goto out;
+    }
+    /* The file is ended with '\n', pass 'end' to accept that. */
+    ret = qemu_strtol(buf, &end, 10, &value);
+    if (ret == 0 && end && *end == '\n') {
+        ret = value;
+    }
+
+out:
+    if (sysfd != -1) {
+        close(sysfd);
+    }
+    return ret;
+}
+
 static int hdev_get_max_segments(int fd, struct stat *st)
 {
 #ifdef CONFIG_LINUX
-    char buf[32];
-    const char *end;
     char *sysfspath = NULL;
     int ret;
-    int sysfd = -1;
-    long max_segments;
 
     if (S_ISCHR(st->st_mode)) {
         if (ioctl(fd, SG_GET_SG_TABLESIZE, &ret) == 0) {
@@ -1216,34 +1250,10 @@ static int hdev_get_max_segments(int fd, struct stat *st)
 
     sysfspath = g_strdup_printf("/sys/dev/block/%u:%u/queue/max_segments",
                                 major(st->st_rdev), minor(st->st_rdev));
-    sysfd = open(sysfspath, O_RDONLY);
-    if (sysfd == -1) {
-        ret = -errno;
-        goto out;
-    }
-    do {
-        ret = read(sysfd, buf, sizeof(buf) - 1);
-    } while (ret == -1 && errno == EINTR);
-    if (ret < 0) {
-        ret = -errno;
-        goto out;
-    } else if (ret == 0) {
-        ret = -EIO;
-        goto out;
-    }
-    buf[ret] = 0;
-    /* The file is ended with '\n', pass 'end' to accept that. */
-    ret = qemu_strtol(buf, &end, 10, &max_segments);
-    if (ret == 0 && end && *end == '\n') {
-        ret = max_segments;
-    }
+    int64_t max_segments = get_sysfs_long(sysfspath);
 
-out:
-    if (sysfd != -1) {
-        close(sysfd);
-    }
     g_free(sysfspath);
-    return ret;
+    return max_segments;
 #else
     return -ENOTSUP;
 #endif
