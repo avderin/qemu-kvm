@@ -600,7 +600,7 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
 
     locking = qapi_enum_parse(&OnOffAuto_lookup,
                               qemu_opt_get(opts, "locking"),
-                              ON_OFF_AUTO_AUTO, &local_err);
+                              ON_OFF_AUTO_OFF, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
         ret = -EINVAL;
