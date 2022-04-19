@@ -1727,10 +1727,55 @@ static int handle_aiocb_write_zeroes(void *opaque)
     return -ENOTSUP;
 }
 
+static int handle_aiocb_discard(void *opaque)
+{
+    RawPosixAIOData *aiocb = opaque;
+    int ret = -EOPNOTSUPP;
+    BDRVRawState *s = aiocb->bs->opaque;
+
+    if (!s->has_discard) {
+        return -ENOTSUP;
+    }
+
+    if (aiocb->aio_type & QEMU_AIO_BLKDEV) {
+#ifdef BLKDISCARD
+        do {
+            uint64_t range[2] = { aiocb->aio_offset, aiocb->aio_nbytes };
+            if (ioctl(aiocb->aio_fildes, BLKDISCARD, range) == 0) {
+                return 0;
+            }
+        } while (errno == EINTR);
+
+        ret = -errno;
+#endif
+    } else {
+#ifdef CONFIG_FALLOCATE_PUNCH_HOLE
+        ret = do_fallocate(s->fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
+                           aiocb->aio_offset, aiocb->aio_nbytes);
+#endif
+    }
+
+    ret = translate_err(ret);
+    if (ret == -ENOTSUP) {
+        s->has_discard = false;
+    }
+    return ret;
+}
+
 static int handle_aiocb_write_zeroes_unmap(void *opaque)
 {
     RawPosixAIOData *aiocb = opaque;
     BDRVRawState *s G_GNUC_UNUSED = aiocb->bs->opaque;
+
+    /* For SIO use BLKDISCARD first */
+#ifdef CONFIG_SIO
+    if (aiocb->aio_type & QEMU_AIO_BLKDEV && aiocb->bs->drv != NULL && !strcmp(aiocb->bs->drv->format_name, "sio_device")) {
+        int ret = handle_aiocb_discard(aiocb);
+        if(ret == 0) {
+            return ret;
+        }
+    }
+#endif
 
     /* First try to write zeros and unmap at the same time */
 
@@ -1798,41 +1843,6 @@ static int handle_aiocb_copy_range(void *opaque)
         bytes -= ret;
     }
     return 0;
-}
-
-static int handle_aiocb_discard(void *opaque)
-{
-    RawPosixAIOData *aiocb = opaque;
-    int ret = -EOPNOTSUPP;
-    BDRVRawState *s = aiocb->bs->opaque;
-
-    if (!s->has_discard) {
-        return -ENOTSUP;
-    }
-
-    if (aiocb->aio_type & QEMU_AIO_BLKDEV) {
-#ifdef BLKDISCARD
-        do {
-            uint64_t range[2] = { aiocb->aio_offset, aiocb->aio_nbytes };
-            if (ioctl(aiocb->aio_fildes, BLKDISCARD, range) == 0) {
-                return 0;
-            }
-        } while (errno == EINTR);
-
-        ret = -errno;
-#endif
-    } else {
-#ifdef CONFIG_FALLOCATE_PUNCH_HOLE
-        ret = do_fallocate(s->fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
-                           aiocb->aio_offset, aiocb->aio_nbytes);
-#endif
-    }
-
-    ret = translate_err(ret);
-    if (ret == -ENOTSUP) {
-        s->has_discard = false;
-    }
-    return ret;
 }
 
 /*
